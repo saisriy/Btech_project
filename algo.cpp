@@ -385,6 +385,7 @@ bool findStableMatching(int s) {
     for (int i = 0; i < n; ++i)
         FreeStudents.push(i);
 
+    for (int round = 0; round < 1000; ++round) {
     while (!FreeStudents.empty()) {
 
         int s = FreeStudents.front();
@@ -399,6 +400,13 @@ bool findStableMatching(int s) {
         int l = projectLecturer[p];
 
         bool accepted = false;
+
+        // A matched student only re-proposes to projects better than the current one
+        if (matching[s] != -1 &&
+            studentProjectRank[s][p] >= studentProjectRank[s][matching[s]]) {
+            if (nextChoice[s] < (int)preferences[s].size()) FreeStudents.push(s);
+            continue;
+        }
 
         // Calculate current allocation statistics
         vector<int> projectCount(m, 0);
@@ -596,6 +604,20 @@ bool findStableMatching(int s) {
                 FreeStudents.push(s);
             }
         }
+    }
+
+    // Rejections are NOT permanent here (suffix quotas change as students are
+    // evicted), so re-activate any student who now has a blocking pair.
+    bool changed = false;
+    for (int t = 0; t < n && !changed; ++t)
+        for (int q : preferences[t])
+            if (isBlockingPair(matching, t, q)) {
+                nextChoice[t] = studentProjectRank[t][q];
+                FreeStudents.push(t);
+                changed = true;
+                break;
+            }
+    if (!changed) break;
     }
 
     // Save final matching
