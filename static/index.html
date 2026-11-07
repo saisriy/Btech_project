@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPA-P Matching</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1d2330; --muted:#667085; --line:#e4e7ec;
+          --accent:#3b5bdb; --ok:#2f9e44; --bad:#e03131;
+          --c1:#d0ebff; --c2:#fff3bf; --c3:#ffd8d8; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12151c; --card:#1b1f2a; --text:#e8eaf0; --muted:#98a2b3; --line:#2b3140;
+            --accent:#748ffc; --c1:#1c3d5a; --c2:#4a4116; --c3:#4d2222; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:1000px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { margin:0 0 4px; } .sub { color:var(--muted); margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  button, .btn { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:9px 16px;
+                 font-size:14px; cursor:pointer; text-decoration:none; }
+  button.secondary, .btn.secondary { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  button:disabled { opacity:.5; cursor:wait; }
+  #drop { border:2px dashed var(--line); border-radius:10px; padding:22px; text-align:center; color:var(--muted); }
+  #drop.over { border-color:var(--accent); }
+  .badges { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .badge { padding:4px 10px; border-radius:99px; font-size:13px; border:1px solid var(--line); }
+  .badge.ok { color:var(--ok); border-color:var(--ok); } .badge.bad { color:var(--bad); border-color:var(--bad); }
+  .stats { display:flex; gap:24px; flex-wrap:wrap; color:var(--muted); font-size:14px; }
+  .stats b { color:var(--text); font-size:18px; display:block; }
+  .lect { margin-top:18px; } .lect h3 { margin:0 0 8px; display:flex; justify-content:space-between; }
+  .lect h3 span { color:var(--muted); font-weight:400; font-size:14px; }
+  .projects { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
+  .proj { border:1px solid var(--line); border-radius:10px; padding:10px; }
+  .proj h4 { margin:0 0 8px; font-size:14px; display:flex; justify-content:space-between; }
+  .chips { display:flex; flex-wrap:wrap; gap:4px; }
+  .chip { font-size:12px; padding:2px 8px; border-radius:6px; }
+  .c1 { background:var(--c1); } .c2 { background:var(--c2); } .c3 { background:var(--c3); }
+  .legend { display:flex; gap:12px; font-size:13px; color:var(--muted); margin:10px 0; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+  input[type=search] { padding:7px 10px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--text); }
+  .scroll { max-height:380px; overflow:auto; }
+  #error { color:var(--bad); white-space:pre-wrap; }
+  pre { overflow:auto; font-size:12px; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SPA-P Matching</h1>
+  <p class="sub">Student&ndash;Project Allocation with category constraints (deferred acceptance).</p>
+
+  <div class="card">
+    <div id="drop">
+      Drop a <code>data.txt</code> file here, or
+      <label style="color:var(--accent);cursor:pointer;text-decoration:underline">browse<input id="file" type="file" accept=".txt" hidden></label>
+      <div id="fname" style="margin-top:6px"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="runBtn" disabled>Run matching</button>
+      <button id="sampleBtn" class="secondary">Run sample data</button>
+      <a class="btn secondary" href="/api/sample" download="data.txt">Download sample file</a>
+    </div>
+    <p id="error"></p>
+  </div>
+
+  <div id="results" hidden>
+    <div class="card">
+      <div class="badges" id="badges"></div>
+      <div class="stats" id="stats"></div>
+      <div class="legend"><span><span class="chip c1">C1</span> category 1</span>
+        <span><span class="chip c2">C2</span> category 2</span><span><span class="chip c3">C3</span> category 3</span></div>
+      <div id="lecturers"></div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <h3 style="margin:0">All assignments</h3>
+        <div class="row"><input id="search" type="search" placeholder="Filter e.g. S12 or P4">
+        <button id="csvBtn" class="secondary">Download CSV</button></div>
+      </div>
+      <div class="scroll"><table><thead><tr><th>Student</th><th>Category</th><th>Project</th><th>Lecturer</th></tr></thead>
+      <tbody id="rows"></tbody></table></div>
+    </div>
+
+    <details class="card"><summary>Raw program output</summary><pre id="raw"></pre></details>
+  </div>
+</main>
+
+<script>
+let chosen = null, current = null;
+const $ = id => document.getElementById(id);
+
+function setFile(f) { chosen = f; $('fname').textContent = f ? f.name : ''; $('runBtn').disabled = !f; }
+$('file').onchange = e => setFile(e.target.files[0]);
+const drop = $('drop');
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); setFile(e.dataTransfer.files[0]); };
+
+async function call(url, body) {
+  $('error').textContent = '';
+  $('runBtn').disabled = $('sampleBtn').disabled = true;
+  try {
+    const r = await fetch(url, { method:'POST', body });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Request failed');
+    render(data);
+  } catch (e) { $('error').textContent = e.message; $('results').hidden = true; }
+  $('sampleBtn').disabled = false; $('runBtn').disabled = !chosen;
+}
+$('runBtn').onclick = () => { const fd = new FormData(); fd.append('file', chosen); call('/api/run', fd); };
+$('sampleBtn').onclick = () => call('/api/run-sample');
+
+function render(d) {
+  current = d; const info = d.info;
+  $('results').hidden = false;
+  const badge = (t, ok) => `<span class="badge ${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'} ${t}</span>`;
+  $('badges').innerHTML = badge('Matching found', d.found) + badge('Feasible', d.feasible) + badge('Stable', d.stable);
+  const unassigned = d.assignments.filter(a => a.project === null).length;
+  $('stats').innerHTML = [['Students', info.n], ['Projects', info.m], ['Lecturers', info.L],
+    ['Assigned', d.assignments.length - unassigned], ['Unassigned', unassigned]]
+    .map(([k, v]) => `<div><b>${v}</b>${k}</div>`).join('');
+
+  const byProj = {};
+  d.assignments.forEach(a => { if (a.project !== null) (byProj[a.project] ||= []).push(a); });
+  let html = '';
+  for (let l = 0; l < info.L; l++) {
+    const projs = info.project_lecturer.map((x, p) => x === l ? p : -1).filter(p => p >= 0);
+    const used = projs.reduce((s, p) => s + (byProj[p] || []).length, 0);
+    html += `<div class="lect"><h3>Lecturer ${l}<span>${used} / ${info.lecturer_capacity[l]} students</span></h3><div class="projects">`;
+    projs.forEach(p => {
+      const list = byProj[p] || [];
+      html += `<div class="proj"><h4>Project ${p}<span style="color:var(--muted)">${list.length}/${info.project_capacity[p]}</span></h4><div class="chips">` +
+        list.map(a => `<span class="chip c${a.category}">S${a.student}</span>`).join('') + `</div></div>`;
+    });
+    html += '</div></div>';
+  }
+  $('lecturers').innerHTML = html;
+  $('raw').textContent = d.raw_output;
+  fillTable();
+}
+
+function fillTable() {
+  const q = $('search').value.trim().toLowerCase(), info = current.info;
+  $('rows').innerHTML = current.assignments.map(a => {
+    const p = a.project === null ? 'Unassigned' : 'P' + a.project;
+    const lec = a.project === null ? '—' : 'L' + info.project_lecturer[a.project];
+    return { s:'S' + a.student, c:'C' + a.category, p, lec };
+  }).filter(r => !q || (r.s + ' ' + r.p + ' ' + r.lec + ' ' + r.c).toLowerCase().includes(q))
+    .map(r => `<tr><td>${r.s}</td><td>${r.c}</td><td>${r.p}</td><td>${r.lec}</td></tr>`).join('');
+}
+$('search').oninput = fillTable;
+
+$('csvBtn').onclick = () => {
+  const info = current.info;
+  const rows = ['student,category,project,lecturer', ...current.assignments.map(a =>
+    `${a.student},C${a.category},${a.project ?? ''},${a.project === null ? '' : info.project_lecturer[a.project]}`)];
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([rows.join('\n')], { type:'text/csv' }));
+  a.download = 'matching.csv'; a.click();
+};
+</script>
+</body>
+</html>
